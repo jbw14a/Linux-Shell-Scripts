@@ -1,0 +1,194 @@
+#LAMP server and web apps setup for host [servername]
+#Rob Byrd 
+#created January 29, 2014 for hosted VM on Rackspace using Ubuntu 14.04 as OS
+#updated January 15, 2016 
+#updated January 11, 2017 Ubuntu 16.04 as OS
+#updated January 17, 2016 Ubuntu 16.04 as OS
+
+# ************************ Pre LAMP setup   ************************
+#IMPORTANT** search this file and replace "abc12a" with your server non-root username
+# and replace "123.123.123.123" with your server IP address
+#also change the email addresses to your own
+
+
+dpkg-reconfigure tzdata
+apt-get update
+apt-get -y upgrade --show-upgraded
+adduser acuteguy
+usermod -a -G sudo acuteguy
+logout
+
+#login to server again and set correct permissions on public key
+mkdir .ssh
+chown -R acuteguy:acuteguy .ssh
+chmod 700 .ssh
+touch .ssh/authorized_keys
+chmod 600 .ssh/authorized_keys
+
+
+sudo vi /etc/ssh/sshd_config
+#set "PermitRootLogin no"
+sudo service ssh restart
+
+#at local computer (for linux/mac.. )
+#for Windows systems use putty keygen. It's a different download than the basic putty )
+ssh-keygen 
+ssh-copy-id -i ~/.ssh/id_rsa.pub acuteguy@150.252.118.140
+
+#login to server again WITHOUT using password
+
+# if password is required then at local computer run:
+ssh-add
+
+# then login without password. If password is required you have not properly configured ssh
+
+
+#firewall configuration
+sudo iptables -L
+
+sudo vi /etc/iptables.firewall.rules
+#---------------------------start copy/paste here---------------
+*filter
+
+#  Allow all loopback (lo0) traffic and drop all traffic to 127/8 that doesn't use lo0
+-A INPUT -i lo -j ACCEPT
+-A INPUT -d 127.0.0.0/8 -j REJECT
+
+#  Accept all established inbound connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+#  Allow all outbound traffic - you can modify this to only allow certain traffic
+-A OUTPUT -j ACCEPT
+
+#  Allow HTTP and HTTPS connections from anywhere (the normal ports for websites and SSL).
+-A INPUT -p tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp --dport 443 -j ACCEPT
+
+
+#  Allow Application Server connections from anywhere (the normal port for Tomcat).
+-A INPUT -p tcp --dport 8080 -j ACCEPT
+
+
+#  Allow SSH connections
+#
+#  The -dport number should be the same port number you set in sshd_config
+#
+-A INPUT -p tcp -m state --state NEW --dport 22 -j ACCEPT
+
+#  Allow ping
+-A INPUT -p icmp -j ACCEPT
+
+#  Log iptables denied calls
+-A INPUT -m limit --limit 5/min -j LOG --log-prefix "iptables denied: " --log-level 7
+
+#  Drop all other inbound - default deny unless explicitly allowed policy
+-A INPUT -j DROP
+-A FORWARD -j DROP
+
+COMMIT
+#------------------Stop copy/paste here ---------------------------------------
+
+#enable the new rules
+sudo iptables-restore < /etc/iptables.firewall.rules
+
+#check updated firewall rules
+sudo iptables -L
+
+#enable firewall with every system reset
+sudo vi /etc/network/if-pre-up.d/firewall
+
+#---------------------------start copy/paste here---------------
+#!/bin/sh
+/sbin/iptables-restore < /etc/iptables.firewall.rules
+
+#---------------------------stop copy/paste here---------------
+
+#make the firewall script executable
+sudo chmod +x /etc/network/if-pre-up.d/firewall
+
+#install jail program
+sudo apt-get -y install fail2ban
+#set max retries and lockout time in configuration file add "maxtry = 5" and "bantime = 600"
+sudo vi /etc/fail2ban/jail.local
+
+#Install LAMP with SSL
+
+sudo apt-get -y install apache2
+sudo a2enmod ssl
+sudo service apache2 restart
+sudo mkdir /etc/apache2/ssl
+
+#create ssl key. 
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/apache2/ssl/apache.key -out /etc/apache2/ssl/apache.crt
+
+#enter distinguished name DN information as prompted (set FQDN to your <hostname>.acu.local)
+
+ls /etc/apache2/sites-available
+#See what the filenames are that you will need to edit
+sudo vi /etc/apache2/sites-available/000-default.conf
+sudo vi /etc/apache2/sites-available/default-ssl.conf
+
+#add virtual host 443. 
+# ---------------------- edit default sites available files below, as appropriate ------
+<VirtualHost *:443>
+        ServerAdmin abc12a@acu.edu
+        ServerName 123.123.123.123:443
+        DocumentRoot /var/www/html
+        SSLEngine on
+        SSLCertificateFile /etc/apache2/ssl/apache.crt
+        SSLCertificateKeyFile /etc/apache2/ssl/apache.key
+# ---------------------- edit default sites available files as above ------
+# These filenames are whatever you want them to be. 
+# They are the filenames you specified in the openssl command above.
+
+
+#sudo nano /etc/hosts
+# ---------------------- insert the following [local] domains ------
+#123.123.123.123 
+#if you have a purchased domain you can add it here
+#-------------------------------------
+
+
+#enable the apache2 site with defaults
+sudo a2ensite default-ssl.conf
+sudo a2ensite 000-default.conf
+sudo service apache2 restart
+
+#test both port 80 and port 443  IPs
+# go to browser and type 
+http://123.123.123.123
+https://123.123.123.123
+# test your servername from the server like this
+#ssh root@abc12a-acu.edu
+#troubleshoot with commands like:   "sudo apachectl configtest" or "sudo systemctl is-enabled apache2"
+#   or "sudo a2dissite default-ssl.conf" or "sudo service apache2 status"
+
+#but DO NOT reboot server until this is working
+
+#reboot server
+sudo reboot now
+
+#install mysql, php, phpmyadmin and mail
+sudo apt-get -y install mysql-server php5 php5-mysql libapache2-mod-php5 php5-curl php-pear php-db php5-ldap phpmyadmin mailutils
+mysql_secure_installation
+sudo cp /etc/phpmyadmin/apache.conf /etc/apache2/conf.d
+sudo service apache2 restart
+sudo service mysql restart
+
+#install malware detection and cleaner
+# use sudo -i to become root
+sudo -i
+wget http://150.252.118.143/maldetect-current.tar.gz
+tar xfz maldetect-current.tar.gz
+cd maldetect-*
+./install.sh
+#the following command scans every file and may take 10... or 45 ... or 185 minutes
+# on a real system because there are 40,000 or 50,000 files on a real system.
+#On this virtual virtual system there are only 100 or 200.
+#By default LMD has the auto-qurantine of files disabled, this will mean that
+#YOU WILL NEED TO ACT on any threats detected or pass the SCANID to the '-q'
+#option to batch quarantine the results. To change this please set quar_hits=1
+#in conf.maldet.
+
+maldet -a /
+

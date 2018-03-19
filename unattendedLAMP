@@ -1,0 +1,94 @@
+ #!/bin/bash
+PW=Sputnik78**
+
+#Configure sshd_config
+sed -i 's/PermitRootLogin yes/PermitRootLogin no/g' /etc/ssh/sshd_config
+
+#exit
+#echo $PW | ssh-keygen
+#echo $PW | ssh-copy-id -i ~/.ssh/id_rsa.pub jbw14a@itc410-jbw14a
+#echo $PW | ssh-add
+#echo $PW | ssh jbw14a@itc410-jbw14a
+
+
+ # Configure IP Tables to allow http
+ cat <<EOF >> /etc/iptables.firewall.rules
+ * filter
+
+ #  Allow all loopback (lo0) traffic and drop all traffic to 127/8 that doesn't use lo0
+ -A INPUT -i lo -j ACCEPT
+ -A INPUT -d 127.0.0.0/8 -j REJECT
+
+ #  Accept all established inbound connections
+ -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+ #  Allow all outbound traffic - you can modify this to only allow certain traffic
+ -A OUTPUT -j ACCEPT
+
+ #  Allow HTTP and HTTPS and MySQL connections from anywhere (the normal ports for websites and SSL).
+ -A INPUT -p tcp --dport 80 -j ACCEPT
+ -A INPUT -p tcp --dport 443 -j ACCEPT
+ -A INPUT -p tcp --dport 3006 -j ACCEPT
+
+
+ #  The -dport number should be the same port number you set in sshd_config
+ -A INPUT -p tcp -m state --state NEW --dport 22 -j ACCEPT
+
+ #  Log iptables denied calls
+ -A INPUT -m limit --limit 5/min -j LOG --log-prefix "iptables denied: " --log-level 7
+
+ #  Drop all other inbound - default deny unless explicitly allowed policy
+ -A INPUT -j DROP
+ -A FORWARD -j DROP
+
+ COMMIT
+ EOF
+
+ echo $PW | sudo iptables-restore < /etc/iptables.firewall.rules
+ echo $PW | sudo iptables -L
+
+
+#Install PHP
+echo $PW | sudo apt-get -y install php7.0 libapache2-mod-php7.0 php7.0-mcrypt php7.0-curl php7.0-mysql php7.0-gd php7.0-cli php7.0-dev php7.0enmod mcrypt
+
+#Install MySQL
+echo "mysql-server-5.6 mysql-server/root_password password Sputnik78**" | sudo debconf-set-selections
+echo "mysql-server-5.6 mysql-server/root_password_again password Sputnik78**" | sudo debconf-set-selections
+echo $PW | sudo apt-get -y install mysql-server
+echo $PW | mysql -u root -p -e 'CREATE DATABASE it410data;'
+
+ #Install Apache
+echo $PW | sudo apt-get -y install apache2
+echo $PW | sudo a2enmod ssl
+echo $PW | sudo service apache2 restart
+echo $PW | sudo mkdir /etc/apache2/ssl
+service apache2 restart && service mysql restart > /dev/null
+
+#ssl key and SSLCertificate
+COUNTRY=US
+STATE=Texas
+CITY=Abilene
+COMPANY=ACU
+DEPT=SITC
+CLASS=IT410
+EMAIL=jbw14a
+echo $PW $COUNTRY $STATE $CITY $COMPANY $DEPT $CLASS $EMAIL | sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/apache2/ssl/apache.key -out /etc/apache2/ssl/apache.crt
+
+#fail2ban
+echo $PW | sudo apt-get -y fail2ban
+echo $PW | sed -i 's/bantime = 3600/bantime = 600/g' /etc/fail2ban/jail.conf
+
+#Install mailutils
+echo "postfix postfix/mailname string localhost" | sudo debconf-set-selections
+echo "postfix postfix/main_mailer_type string 'Internet Site'" | sudo debconf-set-selections
+echo $PW | sudo apt-get -y install mailutils
+echo $PW | sed -i 's/inet_interfaces = all/inet_interfaces = loopback-only/g'
+echo $PW | sudo service postfix restart
+
+#Install maldetect
+echo $PW | sudo -i
+wget http://www.rfxn.com/downloads/maldetect-current.tar.gz
+tar xfz maldetect-current.tar.gz
+cd maldetect-*
+./install.sh
+maldet -a /

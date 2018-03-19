@@ -1,0 +1,111 @@
+#SuiteCRM help ->  https://www.vultr.com/docs/how-to-install-suitecrm-on-ubuntu-16-04
+
+sudo apt-get update -y
+sudo apt-get upgrade -y
+sudo reboot
+
+#install apache php and mariadb
+sudo apt-get install apache2 mariadb-server php7.0 php7.0-mysql php7.0-gd \
+php7.0-curl php7.0-imap php7.0-zip php7.0-mbstring libapache2-mod-php7.0 \
+php7.0-mcrypt php7.0-xml php7.0-json -y
+
+#edit the following lines:
+
+sudo nano /etc/php/7.0/cli/php.ini
+
+post_max_size = 64M
+upload_max_filesize = 64M
+#Original: 60
+max_input_time = 120
+#Original: -1
+memory_limit = 256M
+
+
+#restart apache
+sudo systemctl restart apache2
+
+#enable IMAP module
+sudo phpenmod imap
+
+#Secure mariadb
+sudo mysql_secure_installation
+
+#Respond with:
+# Set root password? [Y/n] n
+# Remove anonymous users? [Y/n] y
+# Disallow root login remotely? [Y/n] y
+# Remove test database and access to it? [Y/n] y
+# Reload privilege tables now? [Y/n] y
+
+#log into MySQL
+mysql -u root -p
+
+#do database things and then exit with \q
+CREATE DATABASE suitecrm_db;
+CREATE USER 'suitecrm' IDENTIFIED BY 'password';
+GRANT ALL PRIVILEGES ON suitecrm_db.* TO 'suitecrm'@'localhost';
+FLUSH PRIVILEGES;
+\q
+
+# install unzip, grab suitecrm from github and unzip it, then move it to a new folder
+sudo apt-get -y unzip
+sudo wget https://github.com/salesagility/SuiteCRM/archive/master.zip
+sudo unzip master.zip
+sudo mv SuiteCRM-master /var/www/html/suitecrm
+
+#change the permission of the suitecrm directory:
+sudo chown -R www-data:www-data /var/www/html/suitecrm
+sudo chmod -R 777 /var/www/html/suitecrm
+
+#create an Apache virtual host server block for SuiteCRM.
+#we can do this by creating a suitecrm.conf file
+sudo nano /etc/apache2/sites-available/suitecrm.conf
+
+#add this into files
+<VirtualHost *:80>
+ ServerAdmin admin@yourdomain.com
+ DocumentRoot /var/www/html/suitecrm/
+ ServerName yourdomain.com
+ ServerAlias www.yourdomain.com
+<Directory /var/www/html/suitecrm/>
+ Options FollowSymLinks
+ AllowOverride All
+</Directory>
+ ErrorLog /var/log/apache2/suitecrm-error_log
+ CustomLog /var/log/apache2/suitecrm-access_log common
+</VirtualHost>
+
+#enable suitecrm site
+sudo a2ensite suitecrm
+
+#restart apache
+sudo systemctl restart apache2
+
+#now visit the brower <ip-address-here>/suitecrm/index.php and finish configuration
+
+# ---- Install Wordpress ----
+
+#download and extraxt the tar.gz file
+wget https://wordpress.org/latest.tar.gz
+tar -xzvf latest.tar.gz
+
+#Setup wordpress database with full user privaleges
+mysql -u username -p
+CREATE DATABASE wordpress
+GRANT ALL PRIVILEGES ON wordpress.* TO jbw14a@it410-jbw14a IDENTIFIED BY "password";
+FLUSH PRIVILEGES
+exit
+
+#setup the wp-config.phpfile
+#navigate to wordpress directory
+cd ~/wordpress
+#rename config file
+mv wp-config-sample.php wp-config.php
+#enter the config file and input database info
+sudo nano wp-config.php
+#^^^in the above step put 'wordpress' as the db name, 'root' as the db username, 'nosrebob' as the db password, 'jbw14a@it410-jbw14a' as the db host
+#save the file and exit
+
+#move contents of wordpress folder to root directory in order for the files to be accessed by the internet
+mv -v ~/wordpress/* /var/www/html
+#open an internet browser and type in the document path to the wp-config.php file

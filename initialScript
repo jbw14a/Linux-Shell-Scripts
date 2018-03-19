@@ -1,0 +1,95 @@
+ #!/bin/bash
+
+PW="Sputnik78**"
+
+# Configure tzdata
+echo $PW | sudo rm /etc/timezone
+
+cat <<EOF >> /etc/timezone
+America/Chicago
+EOF
+
+echo Current Timezone: && cat /etc/timezone
+echo $PW | sudo apt-get update
+echo $PW | sudo apt-get install expect
+
+# Add new user and set their password
+echo $PW | sudo useradd jbw14a
+echo $PW | sudo usermod -a -G sudo jbw14a
+
+
+# The cut command is used to cut out certain sections from the output of a command
+# -d means delimiter (I'm cutting out all of the colons)
+# -f means fields (I only want the first field)
+echo List of usernames in this server:
+echo $PW | sudo cut -d : -f 1 /etc/passwd
+echo $PW | sudo passwd jbw14a
+
+# These expect statements don't work yet, will fix
+expect "Enter new UNIX Password: "
+send "Apollo11!!\r"
+expect "Retype new UNIX password:"
+send "Apollo11!!\r"
+
+#type new password
+
+# Configure IP Tables
+cat <<EOF >> /etc/iptables.firewall.rules
+* filter
+
+#  Allow all loopback (lo0) traffic and drop all traffic to 127/8 that doesn't use lo0
+-A INPUT -i lo -j ACCEPT
+-A INPUT -d 127.0.0.0/8 -j REJECT
+
+#  Accept all established inbound connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+#  Allow all outbound traffic - you can modify this to only allow certain traffic
+-A OUTPUT -j ACCEPT
+
+#  Allow HTTP and HTTPS and MySQL connections from anywhere (the normal ports for websites and SSL).
+-A INPUT -p tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp --dport 443 -j ACCEPT
+-A INPUT -p tcp --dport 3306 -j ACCEPT
+
+#  Allow Application Server connections from anywhere (the normal port for Tomcat).
+-A INPUT -p tcp --dport 8080 -j ACCEPT
+-A INPUT -p tcp --dport 8443 -j ACCEPT
+
+# Allow dns and ldap
+-A INPUT -p tcp --dport 53 -j ACCEPT
+-A INPUT -p tcp --dport 389 -j ACCEPT
+
+#  Allow SSH connections
+
+#  The -dport number should be the same port number you set in sshd_config
+-A INPUT -p tcp -m state --state NEW --dport 22 -j ACCEPT
+
+#  Log iptables denied calls
+-A INPUT -m limit --limit 5/min -j LOG --log-prefix "iptables denied: " --log-level 7
+
+#  Drop all other inbound - default deny unless explicitly allowed policy
+-A INPUT -j DROP
+-A FORWARD -j DROP
+
+COMMIT
+EOF
+
+echo $PW | sudo iptables-restore < /etc/iptables.firewall.rules
+echo $PW | sudo iptables -L
+
+#Install and configure fail2ban
+
+echo $PW | sudo apt-get -y fail2ban
+echo $PW | sed -i 's/bantime = 3600/bantime = 600/g' /etc/fail2ban/jail.conf
+# the deafault "maxtry" is already set to 5 tries
+
+
+#Install MySQL
+echo "mysql-server-5.6 mysql-server/root_password password Sputnik78**" | sudo debconf-set-selections
+echo "mysql-server-5.6 mysql-server/root_password_again password Sputnik78**" | sudo debconf-set-selections
+echo $PW | sudo apt-get -y install mysql-server
+mysql -u root -p -e 'CREATE DATABASE it410-data;'
+
+
+exit

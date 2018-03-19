@@ -1,0 +1,84 @@
+#!/bin/bash
+
+#Moodle Install Instructions --> https://docs.moodle.org/31/en/Step-by-step_Installation_Guide_for_Ubuntu
+
+PW=Sputnik78**
+MYSQL=nosrebob
+IP=159.89.238.24
+
+#Assume LAMP Stack has already been installed
+
+#Install necessary php add-ons for moodle
+echo $PW | sudo apt-get -y install aspell graphviz
+echo $PW | sudo apt-get -y install php-curl php-gd
+echo $PW | sudo apt-get -y install php-intl php-ldap
+echo $PW | sudo apt-get -y install php-pspell php-xml php-xmlrpc php-zip php-soap
+echo $PW | sudo apt-get -y install php-zip php-intl php-xmlrpc php-soap
+
+#Restart apache after installing php add-opens
+echo $PW | sudo systemctl restart apache2
+
+#Install git
+echo $PW | sudo apt-get -y install git-core
+
+#Get moodle from git and download it into our /opt directory
+cd /opt
+echo $PW | sudo git clone git://git.moodle.org/moodle.git
+echo $PW | sudo git checkout MOODLE_34_STABLE
+cd ~
+
+#Copy it to our web root
+echo $PW | sudo cp -R /opt/moodle /var/www/html/
+
+#Make folderto hold our moodle data and modify its permissions so that its files and directories can be edited
+echo $PW | sudo mkdir /var/moodledata
+echo $PW | sudo chown -R www-data /var/moodledata
+echo $PW | sudo chmod -R 777 /var/moodledata
+echo $PW | sudo chmod -R 777 /var/www/html/moodle
+
+#mysql already uses innodb by default so skipping part about modifying the mysqld.cnf file
+
+#Create Database, table, user, and grant all priveleges to user
+echo $MYSQL | mysql -u root -p -e "CREATE DATABASE moodle DEFAULT CHARACTER SET utf8 COLLATE utf8_unicode_ci;"
+echo $MYSQL | mysql -u root -p -e "create user 'moodle_user'@'localhost' IDENTIFIED BY 'nosrebob';"
+echo $MYSQL | mysql -u root -p -e "GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,CREATE TEMPORARY TABLES,DROP,INDEX,ALTER ON moodle.* TO moodle_user@localhost IDENTIFIED BY 'nosrebob';"
+echo $MYSQL | mysql -u root -p -e "FLUSH PRIVILEGES;"
+
+cd /var/www/html/moodle
+
+CFG="\$CFG"
+cat << EOF > config.php
+<?php  // Moodle configuration file
+
+unset($CFG);
+global $CFG;
+$CFG = new stdClass();
+
+$CFG->dbtype    = 'mysqli';
+$CFG->dblibrary = 'native';
+$CFG->dbhost    = 'localhost';
+$CFG->dbname    = 'moodle';
+$CFG->dbuser    = 'moodle_user';
+$CFG->dbpass    = 'nosrebob';
+$CFG->prefix    = 'mdl_';
+$CFG->dboptions = array (
+  'dbpersist' => 0,
+  'dbport' => 3306,
+  'dbsocket' => '',
+  'dbcollation' => 'utf8_unicode_ci',
+);
+
+$CFG->wwwroot   = 'http://$IP/moodle';
+$CFG->dataroot  = '/var/moodledata';
+$CFG->admin     = 'admin';
+
+$CFG->directorypermissions = 0777;
+
+require_once(__DIR__ . '/lib/setup.php');
+
+// There is no php closing tag in this file,
+// it is intentional because it prevents trailing whitespace problems!
+EOF
+
+cd ~
+echo "Moodle has been configured"
